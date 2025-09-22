@@ -1,0 +1,22 @@
+version: "3.8"
+services:
+  tails-warp:
+    build: ./tails-warp
+    container_name: tails-warp
+    privileged: true
+    network_mode: "bridge"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - tails-warp-state:/var/lib/tailscale
+      - tails-warp-warp:/var/lib/cloudflare-warp
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+    restart: unless-stopped
+volumes:
+  tails-warp-state:
+  tails-warp-warp:
+
