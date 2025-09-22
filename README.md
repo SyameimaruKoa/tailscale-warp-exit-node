@@ -55,7 +55,7 @@
 ## 4. セットアップ（ビルド・起動）
 
 1. リポジトリルート（例: `/opt/tails-warp`）に上記ファイルを置く。
-2. 必要があれば `.env` に `TS_AUTHKEY` 、 `TS_HOSTNAME` と `WARP_REGISTER_TOKEN` を記述（セキュリティに注意）。
+2. 必要があれば `.env` に `TS_AUTHKEY` を記述（セキュリティに注意）。
 3. ビルド＆起動:
 
 ```bash

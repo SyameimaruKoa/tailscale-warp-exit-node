@@ -15,6 +15,7 @@ services:
       - tails-warp-warp:/var/lib/cloudflare-warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=tailscale-warp-exit-node
     restart: unless-stopped
 volumes:
   tails-warp-state:
