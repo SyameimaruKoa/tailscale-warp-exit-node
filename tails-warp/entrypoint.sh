@@ -11,10 +11,15 @@ log(){ echo "[$(date -Is)] $*"; }
 log "starting warp-svc..."
 warp-svc & sleep 1
 
+# IPv6 forwarding を即時有効化
+sysctl -w net.ipv6.conf.all.forwarding=1
+sysctl -w net.ipv6.conf.default.forwarding=1
+
+
 # 2) try to register/connect WARP if token provided, else print hint
 if [ -n "${WARP_REGISTER_TOKEN:-}" ]; then
   log "registering warp using token..."
-  yes | warp-cli registration || true
+  yes | warp-cli registration new || true
   warp-cli connect || true
 else
   log "no WARP_REGISTER_TOKEN provided; you may need to run 'warp-cli register' manually inside container and then 'warp-cli connect'"
