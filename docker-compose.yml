@@ -10,6 +10,7 @@ services:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
+      # 【必須】NATモードを有効にする (SOCKS5は無効になる)
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -33,15 +34,16 @@ services:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
-    # 【追加】DNSを固定して名前解決の失敗を防ぐ
+    # DNSを固定して安定化
     dns:
       - 1.1.1.1
       - 1.0.0.1
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # 【追加】--accept-dns=false でTailscaleによるDNS上書きを防止
+      # 【重要】余計なオプションは消す！ Userspaceモードは使わない！
       - TS_EXTRA_ARGS=--advertise-exit-node --accept-dns=false
+      # ⚠️ ここに ALL_PROXY や TS_USERSPACE があってはならぬ！絶対消すのじゃ！
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
