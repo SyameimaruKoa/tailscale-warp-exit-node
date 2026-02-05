@@ -1,7 +1,7 @@
 version: "3"
 
 services:
-  # 1. WARPコンテナ (SOCKS5サーバー)
+  # 1. WARPコンテナ (ゲートウェイ)
   warp:
     image: caomingjun/warp
     container_name: warp
@@ -10,8 +10,8 @@ services:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
-      # 【修正】SOCKS5モードで動かすため、NAT(ファイアウォール)は無効化する！
-      # - WARP_ENABLE_NAT=1  <-- これが邪魔をしておった
+      # ルーティングを行うためNATモード必須
+      - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
       - AUDIT_WRITE
@@ -19,7 +19,9 @@ services:
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
       - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.all.accept_ra=2
     volumes:
       - ./data_warp:/var/lib/cloudflare-warp
     networks:
@@ -27,47 +29,58 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. Tailscaleコンテナ (SOCKS5クライアント)
+  # 2. Tailscaleコンテナ (Exit Node + NATルーター)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
-    depends_on:
-      - warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # 【修正】ここは Exit Node の設定だけにする
+      # カーネルモード(TUN)で動かす
       - TS_EXTRA_ARGS=--advertise-exit-node
-      # 【重要】Userspaceモードを環境変数で有効化
-      - TS_USERSPACE=true
-      # すべての通信をWARPのSOCKS5プロキシに転送
-      - ALL_PROXY=socks5://172.25.0.2:1080
-      - HTTP_PROXY=http://172.25.0.2:1080
-      - HTTPS_PROXY=http://172.25.0.2:1080
     volumes:
       - ./data_tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
       - /etc/hostname:/host_hostname:ro
     cap_add:
       - NET_ADMIN
+      - SYS_MODULE # iptablesのために必要かもしれぬ
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
     networks:
       private_net:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
+    # ここが今回の肝じゃ！iptablesで強制的にNATをかける
     command: >
       -c "
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
-      echo 'Waiting for WARP SOCKS5 proxy...' &&
-      # ncコマンドでポート1080が開くのを待つ
-      until nc -z 172.25.0.2 1080; do echo 'Waiting...'; sleep 2; done &&
+      echo 'Waiting for WARP...' &&
+      until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
+      echo 'WARP is reachable.' &&
+
+      echo 'Setting up Masquerade (NAT)...' &&
+      # 【重要】ここじゃ！Tailscaleから出るパケットの送信元をこのコンテナのIPに書き換える
+      # これによりWARPは返信先を正しく認識できる
+      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
+      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo 'Warning: ip6tables failed' &&
+
+      echo 'Switching Default Gateway to WARP...' &&
+      # IPv4ルート変更
+      ip route del default &&
+      ip route add default via 172.25.0.2 &&
       
-      echo 'WARP is ready!' &&
-      echo 'Starting Tailscale in Userspace mode...' &&
+      # IPv6ルート変更 (エラーが出ても進むように)
+      ip -6 route del default 2>/dev/null || true &&
+      ip -6 route add default via fd00:cafe::2 &&
+
+      echo 'Starting Tailscale...' &&
       exec /usr/local/bin/containerboot"
 
 networks:
