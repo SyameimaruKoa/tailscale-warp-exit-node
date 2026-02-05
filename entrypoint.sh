@@ -3,9 +3,9 @@ set -e
 
 # 1. ホスト名の設定
 if [ -f /host_hostname ]; then
-    export TS_HOSTNAME="warp-$(cat /host_hostname | tr -d '\n')"
+    export TS_HOSTNAME="warp--$(cat /host_hostname | tr -d '\n')"
 else
-    export TS_HOSTNAME="warp-docker"
+    export TS_HOSTNAME="warp--docker"
 fi
 echo "Hostname set to: $TS_HOSTNAME"
 
