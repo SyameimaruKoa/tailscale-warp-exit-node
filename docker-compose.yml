@@ -1,7 +1,7 @@
 version: "3"
 
 services:
-  # 1. 出口となるWARPコンテナ
+  # 1. WARPコンテナ (SOCKS5サーバーとして稼働)
   warp:
     image: caomingjun/warp
     container_name: warp
@@ -10,6 +10,8 @@ services:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
+      # NATモードではなく、プロキシモードとして動作させるだけでも十分だが
+      # 念のためNATも有効にしておく（副作用はない）
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -28,54 +30,52 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. 入口となるTailscaleコンテナ
+  # 2. Tailscaleコンテナ (SOCKS5クライアントとして稼働)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
+    depends_on:
+      - warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
+      # 【重要】ユーザー空間モードで動作させる（tunデバイス不要）
+      - TS_USERSPACE=true
+      # 【最重要】すべての通信をWARPのSOCKS5プロキシに転送する
+      - ALL_PROXY=socks5://172.25.0.2:1080
+      - HTTP_PROXY=http://172.25.0.2:1080
+      - HTTPS_PROXY=http://172.25.0.2:1080
     volumes:
       - ./data_tailscale:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
+      # tunデバイスのマウントは不要になるが、エラー除けに残しても良い
+      # - /dev/net/tun:/dev/net/tun 
       - /etc/hostname:/host_hostname:ro
+    # ユーザー空間モードなのでNET_ADMIN等の強い権限は本来不要だが念の為
     cap_add:
       - NET_ADMIN
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
     networks:
       private_net:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
-    # 【変更点】iptables/ip6tablesでマスカレード（NAT）を設定する処理を追加
     command: >
       -c "
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
-      echo 'Waiting for WARP...' &&
-      until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
-      echo 'WARP is reachable.' &&
+      echo 'Waiting for WARP SOCKS5 proxy...' &&
+      # ポート1080が開くまで待つ（ncコマンドがない場合もあるので簡易チェック）
+      until wget -q --spider http://172.25.0.2:1080; do 
+        echo 'Waiting for WARP...'
+        sleep 2
+      done &&
+      echo 'WARP is ready!' &&
 
-      echo 'Configuring routes and NAT...' &&
-      
-      # 1. ルーティング設定
-      ip route del default &&
-      ip route add default via 172.25.0.2 &&
-      ip -6 route del default 2>/dev/null || true &&
-      ip -6 route add default via fd00:cafe::2 &&
-
-      # 2. NAT(マスカレード)設定【ここが重要！】
-      # Tailscaleクライアントからのパケットを、このコンテナのIPとしてWARPに送り出す
-      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
-      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
-      
-      echo 'Routes and NAT configured. Starting Tailscale...' &&
+      echo 'Starting Tailscale in Userspace mode...' &&
       exec /usr/local/bin/containerboot"
 
 networks:
