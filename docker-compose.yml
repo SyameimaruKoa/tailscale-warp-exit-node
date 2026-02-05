@@ -33,15 +33,19 @@ services:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
+    # 【追加】DNSを固定して名前解決の失敗を防ぐ
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      - TS_EXTRA_ARGS=--advertise-exit-node
+      # 【追加】--accept-dns=false でTailscaleによるDNS上書きを防止
+      - TS_EXTRA_ARGS=--advertise-exit-node --accept-dns=false
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
       - /etc/hostname:/host_hostname:ro
-      # 【重要】作成したスクリプトをマウント
       - ./entrypoint.sh:/entrypoint.sh:ro
     cap_add:
       - NET_ADMIN
@@ -54,7 +58,6 @@ services:
       private_net:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
-    # 【修正】マウントしたスクリプトをエントリーポイントとして実行
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
 networks:
