@@ -1,15 +1,17 @@
 version: "3"
 
 services:
-  # 1. 出口となるWARPコンテナ
+  # 1. 親となるWARPコンテナ
   warp:
     image: caomingjun/warp
     container_name: warp
     restart: always
+    # TUNデバイスの権限
     device_cgroup_rules:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
+      # NATモードを有効にしてルーティングを適切に処理させる
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -23,41 +25,44 @@ services:
       - net.ipv6.conf.all.accept_ra=2
     volumes:
       - ./data_warp:/var/lib/cloudflare-warp
-    networks:
-      - private_net
 
-  # 2. 入口となるTailscaleコンテナ
+  # 2. 寄生するTailscaleコンテナ（サイドカー）
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
+    # 【最重要】WARPコンテナのネットワークに相乗りする
+    network_mode: service:warp
+    depends_on:
+      - warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_HOSTNAME=${TS_HOSTNAME:-warp-${HOSTNAME:-docker}}
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
     volumes:
       - ./data_tailscale:/var/lib/tailscale
+      # ネットワークは共有だが、デバイスファイルはマウントが必要
       - /dev/net/tun:/dev/net/tun
+      # ホスト名を読み取るためのマウント
+      - /etc/hostname:/host_hostname:ro
     cap_add:
       - NET_ADMIN
-    # 【追加】ここじゃ！Tailscaleコンテナ自身もIPv6転送を許可せねばならぬ
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-    networks:
-      - private_net
     entrypoint: /bin/sh
     command: >
       -c "
-      echo 'Waiting for warp container...' &&
-      until getent hosts warp >/dev/null 2>&1; do sleep 1; done &&
-      WARP_IP=$$(getent hosts warp | awk '{ print $$1 }' | head -n 1) &&
-      echo \"Found WARP at $$WARP_IP\" &&
-      echo 'Changing default gateway to WARP...' &&
-      ip route del default &&
-      ip route add default via $$WARP_IP &&
+      # ホスト名を設定
+      export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
+      echo \"Hostname set to: $$TS_HOSTNAME\" &&
+
+      echo 'Waiting for CloudflareWARP interface...' &&
+      # WARPインターフェースができるまで待機（IPv6はこれで降ってくる）
+      until ip link show CloudflareWARP >/dev/null 2>&1; do sleep 1; done &&
+      echo 'WARP interface found!' &&
+      
+      # WARP経由になるようにデフォルトルートを調整（念の為）
+      # 通常はWARP_ENABLE_NAT=1がやってくれるが、Tailscale起動前に確実にする
+      
+      echo 'Starting Tailscale...' &&
       exec /usr/local/bin/containerboot"
 
-networks:
-  private_net:
+# ネットワーク定義は不要（warpサービス内で完結するため）
