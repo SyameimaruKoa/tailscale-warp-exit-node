@@ -29,21 +29,20 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. Tailscaleコンテナ (Exit Node)
+# 2. Tailscaleコンテナ (Exit Node)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
-    # DNSを固定して安定化
     dns:
       - 1.1.1.1
       - 1.0.0.1
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # 【重要】余計なオプションは消す！ Userspaceモードは使わない！
+      # ⬇️【ここを追加】これを入れないと勝手にUserspaceモードになってしまう！
+      - TS_USERSPACE=false
       - TS_EXTRA_ARGS=--advertise-exit-node --accept-dns=false
-      # ⚠️ ここに ALL_PROXY や TS_USERSPACE があってはならぬ！絶対消すのじゃ！
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
