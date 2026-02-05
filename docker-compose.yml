@@ -37,7 +37,7 @@ services:
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # カーネルモード(TUN)で動かす
+      # カーネルモード(TUN)で動かすため Exit Node 以外の余計なオプションは外す
       - TS_EXTRA_ARGS=--advertise-exit-node
     volumes:
       - ./data_tailscale:/var/lib/tailscale
