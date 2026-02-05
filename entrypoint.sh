@@ -9,28 +9,34 @@ else
 fi
 echo "Hostname set to: $TS_HOSTNAME"
 
-# 【追加】MTUを少し小さく設定してパケット詰まりを防ぐ
+# TailscaleのインターフェースMTUを少し下げる（IPv6の最小値1280ギリギリを攻める）
 export TS_DEBUG_MTU=1280
 
-# 2. バックグラウンドで遅延設定を行う関数
+# 2. 遅延設定関数
 setup_routes() {
     echo "Background: Waiting 10s for Tailscale to start..."
     sleep 10
     
-    echo "Background: Setting up NAT & MSS Clamping..."
+    echo "Background: Enabling IP Forwarding..."
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+    sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1
+
+    echo "Background: Setting up NAT & MSS Clamping (Aggressive)..."
+    
     # NAT (Masquerade)
     iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
     ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo "WARNING: IPv6 NAT failed."
 
-    # MSS Clamping (パケットサイズ調整) - 少し値を下げてみる (1200)
-    iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1200
-    ip6tables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1200 || true
+    # 【重要】MSS Clamping (パケットサイズを1120まで強制縮小)
+    # VPN in VPNのオーバーヘッドを考慮してかなり小さめに設定する
+    iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1120
+    ip6tables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1120 || true
 
     echo "Background: Switching Gateway to WARP..."
     ip route del default || true
     ip route add default via 172.25.0.2
     
-    ip -6 route del default 2>/dev/null || true
+    ip -6 route del default || true
     ip -6 route add default via fd00:cafe::2
     
     echo "Background: Setup COMPLETE. Traffic should now go via WARP."
