@@ -53,40 +53,40 @@ services:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
-    # 【修正】ヒアドキュメントでスクリプトを作成し、バックグラウンド実行する
+    # 【修正】ヒアドキュメントを廃止し、関数定義を使うことで構文エラーを回避
     command: >
       -c '
       # 1. ホスト名設定
       export TS_HOSTNAME="warp-$(cat /host_hostname | tr -d "\n")"
       echo "Hostname set to: $TS_HOSTNAME"
 
-      # 2. 遅延設定スクリプトを作成
-      cat <<EOF > /tmp/warp-setup.sh
-      #!/bin/sh
-      echo "Background: Waiting 10s for Tailscale to start..."
-      sleep 10
-      
-      echo "Background: Setting up IPv4 NAT..."
-      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-      
-      echo "Background: Setting up IPv6 NAT..."
-      # ホストでモジュールがロードされていない場合は警告のみ出して進む
-      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo "WARNING: IPv6 NAT failed. Did you run \"sudo modprobe ip6table_nat\" on the host?"
+      # 2. 遅延実行用の関数を定義
+      setup_routes() {
+        echo "Background: Waiting 10s for Tailscale to start..."
+        sleep 10
+        
+        echo "Background: Setting up IPv4 NAT..."
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+        
+        echo "Background: Setting up IPv6 NAT..."
+        # 失敗しても警告を出して進む
+        ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo "WARNING: IPv6 NAT failed. Check host modules."
 
-      echo "Background: Switching Gateway to WARP..."
-      ip route del default
-      ip route add default via 172.25.0.2
-      ip -6 route del default || true
-      ip -6 route add default via fd00:cafe::2
-      
-      echo "Background: Setup COMPLETE."
-      EOF
-      
-      # 3. スクリプトに実行権限を与えてバックグラウンドで実行
-      chmod +x /tmp/warp-setup.sh
-      /tmp/warp-setup.sh &
+        echo "Background: Switching Gateway to WARP..."
+        # IPv4ルート変更
+        ip route del default
+        ip route add default via 172.25.0.2
+        # IPv6ルート変更
+        ip -6 route del default 2>/dev/null || true
+        ip -6 route add default via fd00:cafe::2
+        
+        echo "Background: Setup COMPLETE."
+      }
 
-      # 4. Tailscale本体を起動
+      # 3. バックグラウンドで関数を実行
+      setup_routes &
+
+      # 4. Tailscale本体を起動 (ここが重要！execでプロセスを置き換える)
       echo "Starting Tailscale..."
       exec /usr/local/bin/containerboot
       '
