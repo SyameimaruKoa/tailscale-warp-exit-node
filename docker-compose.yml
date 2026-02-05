@@ -1,0 +1,62 @@
+version: "3"
+
+services:
+  # 1. 出口となるWARPコンテナ
+  warp:
+    image: caomingjun/warp
+    container_name: warp
+    restart: always
+    device_cgroup_rules:
+      - 'c 10:200 rwm'
+    environment:
+      - WARP_SLEEP=2
+      - WARP_ENABLE_NAT=1
+    cap_add:
+      - MKNOD
+      - AUDIT_WRITE
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.all.accept_ra=2
+    volumes:
+      - ./data_warp:/var/lib/cloudflare-warp
+    networks:
+      private_net:
+        ipv4_address: ${WARP_IP:-172.20.0.2}
+
+  # 2. 入口となるTailscaleコンテナ
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: always
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      # 【変更点】 デフォルトを warp-[ホスト名] に設定
+      # 変数 HOSTNAME が空の場合は warp-docker になる
+      - TS_HOSTNAME=${TS_HOSTNAME:-warp-${HOSTNAME:-docker}}
+      - TS_EXTRA_ARGS=--advertise-exit-node
+      - TS_STATE_DIR=/var/lib/tailscale
+    volumes:
+      - ./data_tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    networks:
+      private_net:
+        ipv4_address: ${TAILSCALE_IP:-172.20.0.3}
+    command: >
+      /bin/sh -c "
+      echo 'Changing default gateway to WARP...' &&
+      ip route del default &&
+      ip route add default via ${WARP_IP:-172.20.0.2} &&
+      exec /usr/local/bin/containerboot"
+
+networks:
+  private_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${SUBNET_CIDR:-172.20.0.0/16}
