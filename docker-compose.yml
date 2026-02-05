@@ -1,7 +1,7 @@
 version: "3"
 
 services:
-  # 1. WARPコンテナ (SOCKS5サーバーとして稼働)
+  # 1. WARPコンテナ (SOCKS5サーバー)
   warp:
     image: caomingjun/warp
     container_name: warp
@@ -10,8 +10,6 @@ services:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
-      # NATモードではなく、プロキシモードとして動作させるだけでも十分だが
-      # 念のためNATも有効にしておく（副作用はない）
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -30,7 +28,7 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. Tailscaleコンテナ (SOCKS5クライアントとして稼働)
+  # 2. Tailscaleコンテナ (SOCKS5クライアント)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
@@ -39,20 +37,18 @@ services:
       - warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
-      # 【重要】ユーザー空間モードで動作させる（tunデバイス不要）
-      - TS_USERSPACE=true
-      # 【最重要】すべての通信をWARPのSOCKS5プロキシに転送する
+      # 【重要】TUNデバイスを使わず、ユーザー空間ネットワーキングを強制する
+      # これにより、TailscaleはOSのルーティングテーブルではなく、環境変数のプロキシ設定に従うようになる
+      - TS_EXTRA_ARGS=--advertise-exit-node --tun=userspace-networking
+      # 【最重要】すべての通信をWARPのSOCKS5プロキシに転送
       - ALL_PROXY=socks5://172.25.0.2:1080
       - HTTP_PROXY=http://172.25.0.2:1080
       - HTTPS_PROXY=http://172.25.0.2:1080
     volumes:
       - ./data_tailscale:/var/lib/tailscale
-      # tunデバイスのマウントは不要になるが、エラー除けに残しても良い
-      # - /dev/net/tun:/dev/net/tun 
       - /etc/hostname:/host_hostname:ro
-    # ユーザー空間モードなのでNET_ADMIN等の強い権限は本来不要だが念の為
+    # Userspaceモードなので特権は減らせるが、念の為入れておく
     cap_add:
       - NET_ADMIN
     sysctls:
@@ -62,19 +58,18 @@ services:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
+    # 【修正】セミコロンを追加して文法エラーを回避
     command: >
       -c "
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
       echo 'Waiting for WARP SOCKS5 proxy...' &&
-      # ポート1080が開くまで待つ（ncコマンドがない場合もあるので簡易チェック）
-      until wget -q --spider http://172.25.0.2:1080; do 
-        echo 'Waiting for WARP...'
-        sleep 2
-      done &&
+      # ncコマンドでポートチェック (wgetよりも確実)
+      # ループ内の各コマンドの末尾にセミコロンを入れる
+      until nc -z 172.25.0.2 1080; do echo 'Waiting...'; sleep 2; done &&
+      
       echo 'WARP is ready!' &&
-
       echo 'Starting Tailscale in Userspace mode...' &&
       exec /usr/local/bin/containerboot"
 
