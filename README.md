@@ -25,8 +25,9 @@
 - **【重要】ホストOS側のカーネルモジュール** :
   IPv6 の NAT を機能させるため、**ホストOS（Ubuntu等）** で以下のモジュールが有効になっている必要がある。
 
+**必ずホスト側で実行せよ！**
+
 ```bash
-# 必ずホスト側で実行せよ！
 sudo modprobe ip6table_nat
 sudo modprobe iptable_nat
 ```
@@ -66,6 +67,22 @@ docker compose up -d
 ### 4. 接続確認
 
 Tailscale の管理画面で新しいノード（例: `warp-ubuntu`）が表示され、**「Exit Node」** として認識されているか確認せよ。
+
+**【重要】成功の証（Endpoints）**
+
+Tailscale管理画面のMachines一覧で、このコンテナの **Endpoints** 欄を見るのじゃ。
+
+以下のように、自宅（ISP）のIPだけでなく、 **Cloudflare WARP由来のIPアドレス** （IPv4なら `104.xx...`、IPv6なら `2a09...` など）が追加されていれば成功じゃ！
+
+> **Endpointsの表示例:**
+>
+> - `xxx.xxx.xxx.xxx:35767` (自宅/ホストのグローバルIP)
+> - `104.28.xxx.xxx:56256` ( **Cloudflare WARPのIPv4** ) ← これがあればOK
+> - `172.25.0.3:35767` (Docker内部IP)
+> - `[240d:1a:xxx:xxxx:xxxx...]:37819` (自宅/ホストのグローバルIPv6)
+> - `[2a09:bac1:xxx:xxxx...]:16210` ( **Cloudflare WARPのIPv6** ) ← これもあれば完璧じゃ
+
+※ IPアドレスの数値は環境によって異なるが、重要なのは「自分のISPのIP」とは異なる「CloudflareのIP帯域」が表示されていることじゃ。
 
 スマホなどのクライアントでこの Exit Node を有効にし、[test-ipv6.com](https://test-ipv6.com/index.html.ja_JP) などにアクセスして以下を確認するのじゃ。
 
