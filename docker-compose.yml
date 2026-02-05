@@ -1,17 +1,15 @@
 version: "3"
 
 services:
-  # 1. 親となるWARPコンテナ
+  # 1. 出口となるWARPコンテナ
   warp:
     image: caomingjun/warp
     container_name: warp
     restart: always
-    # TUNデバイスの権限
     device_cgroup_rules:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
-      # NATモードを有効にしてルーティングを適切に処理させる
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -25,44 +23,70 @@ services:
       - net.ipv6.conf.all.accept_ra=2
     volumes:
       - ./data_warp:/var/lib/cloudflare-warp
+    networks:
+      private_net:
+        ipv4_address: 172.25.0.2
+        ipv6_address: fd00:warp::2
 
-  # 2. 寄生するTailscaleコンテナ（サイドカー）
+  # 2. 入口となるTailscaleコンテナ
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
-    # 【最重要】WARPコンテナのネットワークに相乗りする
-    network_mode: service:warp
-    depends_on:
-      - warp
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
+      # ホスト名はスクリプトで設定するためここは空でも良いが、念の為変数を渡す
+      # - TS_HOSTNAME=... 
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
+      # ユーザーモードネットワーキングを無効化し、カーネルレベルのルーティングを使用させる
+      - TS_USERSPACE=false
     volumes:
       - ./data_tailscale:/var/lib/tailscale
-      # ネットワークは共有だが、デバイスファイルはマウントが必要
       - /dev/net/tun:/dev/net/tun
-      # ホスト名を読み取るためのマウント
+      # ホスト名取得用
       - /etc/hostname:/host_hostname:ro
     cap_add:
       - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    networks:
+      private_net:
+        ipv4_address: 172.25.0.3
+        ipv6_address: fd00:warp::3
     entrypoint: /bin/sh
     command: >
       -c "
-      # ホスト名を設定
+      # 1. ホスト名の設定
+      # ホストマシンのホスト名を読み取り、環境変数にセット
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
-      echo 'Waiting for CloudflareWARP interface...' &&
-      # WARPインターフェースができるまで待機（IPv6はこれで降ってくる）
-      until ip link show CloudflareWARP >/dev/null 2>&1; do sleep 1; done &&
-      echo 'WARP interface found!' &&
+      # 2. WARPの起動待機
+      echo 'Waiting for WARP...' &&
+      until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
+      echo 'WARP is reachable.' &&
+
+      # 3. ルーティングの書き換え（ここが肝じゃ！）
+      echo 'Configuring routes...' &&
       
-      # WARP経由になるようにデフォルトルートを調整（念の為）
-      # 通常はWARP_ENABLE_NAT=1がやってくれるが、Tailscale起動前に確実にする
+      # IPv4: デフォルトゲートウェイをWARPに向ける
+      ip route del default &&
+      ip route add default via 172.25.0.2 &&
       
-      echo 'Starting Tailscale...' &&
+      # IPv6: デフォルトゲートウェイをWARPに向ける
+      # (エラーが出ても止まらないように || true をつける)
+      ip -6 route del default 2>/dev/null || true &&
+      ip -6 route add default via fd00:warp::2 &&
+
+      echo 'Routes configured. Starting Tailscale...' &&
       exec /usr/local/bin/containerboot"
 
-# ネットワーク定義は不要（warpサービス内で完結するため）
+networks:
+  private_net:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+        - subnet: fd00:warp::/64
