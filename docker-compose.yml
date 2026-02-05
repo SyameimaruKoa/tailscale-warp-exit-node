@@ -10,7 +10,6 @@ services:
       - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
-      # ルーティングを行うためNATモード必須
       - WARP_ENABLE_NAT=1
     cap_add:
       - MKNOD
@@ -29,7 +28,7 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. Tailscaleコンテナ (Exit Node + NATルーター)
+  # 2. Tailscaleコンテナ (Exit Node + 遅延設定)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
@@ -37,7 +36,7 @@ services:
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # カーネルモード(TUN)で動かすため Exit Node 以外の余計なオプションは外す
+      # カーネルモード必須
       - TS_EXTRA_ARGS=--advertise-exit-node
     volumes:
       - ./data_tailscale:/var/lib/tailscale
@@ -45,7 +44,7 @@ services:
       - /etc/hostname:/host_hostname:ro
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE # iptablesのために必要かもしれぬ
+      - NET_RAW
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv4.ip_forward=1
@@ -55,32 +54,34 @@ services:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
-    # ここが今回の肝じゃ！iptablesで強制的にNATをかける
+    # 【最重要】バックグラウンドで10秒待ってからルートとNATを強制適用する
     command: >
       -c "
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
-      echo 'Waiting for WARP...' &&
-      until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
-      echo 'WARP is reachable.' &&
+      # --- バックグラウンド処理開始 ---
+      (
+        echo 'Background setup: Waiting 10s for Tailscale to initialize...'
+        sleep 10
+        
+        echo 'Background setup: Applying NAT (Masquerade)...'
+        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+        ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo 'IPv6 NAT failed (warning)'
 
-      echo 'Setting up Masquerade (NAT)...' &&
-      # 【重要】ここじゃ！Tailscaleから出るパケットの送信元をこのコンテナのIPに書き換える
-      # これによりWARPは返信先を正しく認識できる
-      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
-      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo 'Warning: ip6tables failed' &&
+        echo 'Background setup: Overwriting Default Gateway to WARP...'
+        # IPv4
+        ip route del default || true
+        ip route add default via 172.25.0.2
+        # IPv6
+        ip -6 route del default || true
+        ip -6 route add default via fd00:cafe::2
+        
+        echo 'Background setup: Configuration COMPLETE! Traffic should now go via WARP.'
+      ) &
+      # --- バックグラウンド処理終了 ---
 
-      echo 'Switching Default Gateway to WARP...' &&
-      # IPv4ルート変更
-      ip route del default &&
-      ip route add default via 172.25.0.2 &&
-      
-      # IPv6ルート変更 (エラーが出ても進むように)
-      ip -6 route del default 2>/dev/null || true &&
-      ip -6 route add default via fd00:cafe::2 &&
-
-      echo 'Starting Tailscale...' &&
+      echo 'Starting Tailscale main process...'
       exec /usr/local/bin/containerboot"
 
 networks:
