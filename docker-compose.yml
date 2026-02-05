@@ -24,8 +24,7 @@ services:
     volumes:
       - ./data_warp:/var/lib/cloudflare-warp
     networks:
-      private_net:
-        ipv4_address: ${WARP_IP:-172.20.0.2}
+      - private_net
 
   # 2. 入口となるTailscaleコンテナ
   tailscale:
@@ -34,8 +33,6 @@ services:
     restart: always
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      # 【変更点】 デフォルトを warp-[ホスト名] に設定
-      # 変数 HOSTNAME が空の場合は warp-docker になる
       - TS_HOSTNAME=${TS_HOSTNAME:-warp-${HOSTNAME:-docker}}
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
@@ -45,18 +42,19 @@ services:
     cap_add:
       - NET_ADMIN
     networks:
-      private_net:
-        ipv4_address: ${TAILSCALE_IP:-172.20.0.3}
+      - private_net
+    # 【ここが魔法じゃ】 WARPのホスト名からIPを自動で引いてゲートウェイにする
     command: >
       /bin/sh -c "
+      echo 'Waiting for warp container...' &&
+      until getent hosts warp >/dev/null 2>&1; do sleep 1; done &&
+      WARP_IP=\$(getent hosts warp | awk '{ print \$1 }' | head -n 1) &&
+      echo \"Found WARP at \$WARP_IP\" &&
       echo 'Changing default gateway to WARP...' &&
       ip route del default &&
-      ip route add default via ${WARP_IP:-172.20.0.2} &&
+      ip route add default via \$WARP_IP &&
       exec /usr/local/bin/containerboot"
 
 networks:
   private_net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${SUBNET_CIDR:-172.20.0.0/16}
+    # 設定なし＝Dockerにお任せ（自動割り当て）
