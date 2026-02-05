@@ -33,7 +33,7 @@ services:
     restart: always
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_HOSTNAME=${TS_HOSTNAME:-warp-${HOSTNAME:-docker}}
+      - TS_HOSTNAME=${TS_HOSTNAME} # 変数をそのまま使う（デフォルト値処理は.env生成時に任せる）
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
     volumes:
@@ -41,11 +41,13 @@ services:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
+    # 【追加】ここじゃ！Tailscaleコンテナ自身もIPv6転送を許可せねばならぬ
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
     networks:
       - private_net
-    # 【重要】エントリーポイントをシェルに上書きして、確実にスクリプトを実行させる
     entrypoint: /bin/sh
-    # $ を $$ に修正し、Docker Composeによる誤置換を防止
     command: >
       -c "
       echo 'Waiting for warp container...' &&
