@@ -33,7 +33,7 @@ services:
     restart: always
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_HOSTNAME=${TS_HOSTNAME} # 変数をそのまま使う（デフォルト値処理は.env生成時に任せる）
+      - TS_HOSTNAME=${TS_HOSTNAME:-warp-${HOSTNAME:-docker}}
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
     volumes:
