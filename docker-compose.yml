@@ -43,18 +43,19 @@ services:
       - NET_ADMIN
     networks:
       - private_net
-    # 【ここが魔法じゃ】 WARPのホスト名からIPを自動で引いてゲートウェイにする
+    # 【重要】エントリーポイントをシェルに上書きして、確実にスクリプトを実行させる
+    entrypoint: /bin/sh
+    # $ を $$ に修正し、Docker Composeによる誤置換を防止
     command: >
-      /bin/sh -c "
+      -c "
       echo 'Waiting for warp container...' &&
       until getent hosts warp >/dev/null 2>&1; do sleep 1; done &&
-      WARP_IP=\$(getent hosts warp | awk '{ print \$1 }' | head -n 1) &&
-      echo \"Found WARP at \$WARP_IP\" &&
+      WARP_IP=$$(getent hosts warp | awk '{ print $$1 }' | head -n 1) &&
+      echo \"Found WARP at $$WARP_IP\" &&
       echo 'Changing default gateway to WARP...' &&
       ip route del default &&
-      ip route add default via \$WARP_IP &&
+      ip route add default via $$WARP_IP &&
       exec /usr/local/bin/containerboot"
 
 networks:
   private_net:
-    # 設定なし＝Dockerにお任せ（自動割り当て）
