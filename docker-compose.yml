@@ -26,7 +26,6 @@ services:
     networks:
       private_net:
         ipv4_address: 172.25.0.2
-        # 【修正】warp -> cafe
         ipv6_address: fd00:cafe::2
 
   # 2. 入口となるTailscaleコンテナ
@@ -51,9 +50,9 @@ services:
     networks:
       private_net:
         ipv4_address: 172.25.0.3
-        # 【修正】warp -> cafe
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
+    # 【変更点】iptables/ip6tablesでマスカレード（NAT）を設定する処理を追加
     command: >
       -c "
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
@@ -63,15 +62,20 @@ services:
       until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
       echo 'WARP is reachable.' &&
 
-      echo 'Configuring routes...' &&
+      echo 'Configuring routes and NAT...' &&
+      
+      # 1. ルーティング設定
       ip route del default &&
       ip route add default via 172.25.0.2 &&
-      
-      # 【修正】warp -> cafe
       ip -6 route del default 2>/dev/null || true &&
       ip -6 route add default via fd00:cafe::2 &&
 
-      echo 'Routes configured. Starting Tailscale...' &&
+      # 2. NAT(マスカレード)設定【ここが重要！】
+      # Tailscaleクライアントからのパケットを、このコンテナのIPとしてWARPに送り出す
+      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
+      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE &&
+      
+      echo 'Routes and NAT configured. Starting Tailscale...' &&
       exec /usr/local/bin/containerboot"
 
 networks:
@@ -80,5 +84,4 @@ networks:
     ipam:
       config:
         - subnet: 172.25.0.0/16
-        # 【修正】warp -> cafe (有効な16進数)
         - subnet: fd00:cafe::/64
