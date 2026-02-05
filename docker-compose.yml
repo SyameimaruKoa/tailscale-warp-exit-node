@@ -26,7 +26,8 @@ services:
     networks:
       private_net:
         ipv4_address: 172.25.0.2
-        ipv6_address: fd00:warp::2
+        # 【修正】warp -> cafe
+        ipv6_address: fd00:cafe::2
 
   # 2. 入口となるTailscaleコンテナ
   tailscale:
@@ -35,16 +36,12 @@ services:
     restart: always
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
-      # ホスト名はスクリプトで設定するためここは空でも良いが、念の為変数を渡す
-      # - TS_HOSTNAME=... 
       - TS_EXTRA_ARGS=--advertise-exit-node
       - TS_STATE_DIR=/var/lib/tailscale
-      # ユーザーモードネットワーキングを無効化し、カーネルレベルのルーティングを使用させる
       - TS_USERSPACE=false
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
-      # ホスト名取得用
       - /etc/hostname:/host_hostname:ro
     cap_add:
       - NET_ADMIN
@@ -54,31 +51,25 @@ services:
     networks:
       private_net:
         ipv4_address: 172.25.0.3
-        ipv6_address: fd00:warp::3
+        # 【修正】warp -> cafe
+        ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
     command: >
       -c "
-      # 1. ホスト名の設定
-      # ホストマシンのホスト名を読み取り、環境変数にセット
       export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
       echo \"Hostname set to: $$TS_HOSTNAME\" &&
 
-      # 2. WARPの起動待機
       echo 'Waiting for WARP...' &&
       until ping -c 1 172.25.0.2 >/dev/null 2>&1; do sleep 1; done &&
       echo 'WARP is reachable.' &&
 
-      # 3. ルーティングの書き換え（ここが肝じゃ！）
       echo 'Configuring routes...' &&
-      
-      # IPv4: デフォルトゲートウェイをWARPに向ける
       ip route del default &&
       ip route add default via 172.25.0.2 &&
       
-      # IPv6: デフォルトゲートウェイをWARPに向ける
-      # (エラーが出ても止まらないように || true をつける)
+      # 【修正】warp -> cafe
       ip -6 route del default 2>/dev/null || true &&
-      ip -6 route add default via fd00:warp::2 &&
+      ip -6 route add default via fd00:cafe::2 &&
 
       echo 'Routes configured. Starting Tailscale...' &&
       exec /usr/local/bin/containerboot"
@@ -89,4 +80,5 @@ networks:
     ipam:
       config:
         - subnet: 172.25.0.0/16
-        - subnet: fd00:warp::/64
+        # 【修正】warp -> cafe (有効な16進数)
+        - subnet: fd00:cafe::/64
