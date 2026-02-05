@@ -28,7 +28,7 @@ services:
         ipv4_address: 172.25.0.2
         ipv6_address: fd00:cafe::2
 
-  # 2. Tailscaleコンテナ (Exit Node + 遅延設定)
+  # 2. Tailscaleコンテナ (Exit Node)
   tailscale:
     image: tailscale/tailscale:latest
     container_name: tailscale
@@ -36,7 +36,6 @@ services:
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      # カーネルモード必須
       - TS_EXTRA_ARGS=--advertise-exit-node
     volumes:
       - ./data_tailscale:/var/lib/tailscale
@@ -54,35 +53,43 @@ services:
         ipv4_address: 172.25.0.3
         ipv6_address: fd00:cafe::3
     entrypoint: /bin/sh
-    # 【最重要】バックグラウンドで10秒待ってからルートとNATを強制適用する
+    # 【修正】ヒアドキュメントでスクリプトを作成し、バックグラウンド実行する
     command: >
-      -c "
-      export TS_HOSTNAME=\"warp-$$(cat /host_hostname | tr -d '\n')\" &&
-      echo \"Hostname set to: $$TS_HOSTNAME\" &&
+      -c '
+      # 1. ホスト名設定
+      export TS_HOSTNAME="warp-$(cat /host_hostname | tr -d "\n")"
+      echo "Hostname set to: $TS_HOSTNAME"
 
-      # --- バックグラウンド処理開始 ---
-      (
-        echo 'Background setup: Waiting 10s for Tailscale to initialize...'
-        sleep 10
-        
-        echo 'Background setup: Applying NAT (Masquerade)...'
-        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-        ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo 'IPv6 NAT failed (warning)'
+      # 2. 遅延設定スクリプトを作成
+      cat <<EOF > /tmp/warp-setup.sh
+      #!/bin/sh
+      echo "Background: Waiting 10s for Tailscale to start..."
+      sleep 10
+      
+      echo "Background: Setting up IPv4 NAT..."
+      iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      
+      echo "Background: Setting up IPv6 NAT..."
+      # ホストでモジュールがロードされていない場合は警告のみ出して進む
+      ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE || echo "WARNING: IPv6 NAT failed. Did you run \"sudo modprobe ip6table_nat\" on the host?"
 
-        echo 'Background setup: Overwriting Default Gateway to WARP...'
-        # IPv4
-        ip route del default || true
-        ip route add default via 172.25.0.2
-        # IPv6
-        ip -6 route del default || true
-        ip -6 route add default via fd00:cafe::2
-        
-        echo 'Background setup: Configuration COMPLETE! Traffic should now go via WARP.'
-      ) &
-      # --- バックグラウンド処理終了 ---
+      echo "Background: Switching Gateway to WARP..."
+      ip route del default
+      ip route add default via 172.25.0.2
+      ip -6 route del default || true
+      ip -6 route add default via fd00:cafe::2
+      
+      echo "Background: Setup COMPLETE."
+      EOF
+      
+      # 3. スクリプトに実行権限を与えてバックグラウンドで実行
+      chmod +x /tmp/warp-setup.sh
+      /tmp/warp-setup.sh &
 
-      echo 'Starting Tailscale main process...'
-      exec /usr/local/bin/containerboot"
+      # 4. Tailscale本体を起動
+      echo "Starting Tailscale..."
+      exec /usr/local/bin/containerboot
+      '
 
 networks:
   private_net:
