@@ -17,9 +17,9 @@ setup_routes() {
     echo "Background: Waiting 10s for Tailscale to start..."
     sleep 10
     
-    echo "Background: Enabling IP Forwarding..."
-    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
-    sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1
+    #echo "Background: Enabling IP Forwarding..."
+    #sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+    #sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1
 
     echo "Background: Setting up NAT & MSS Clamping (Aggressive)..."
     
