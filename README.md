@@ -1,144 +1,155 @@
-# Tailscale Exit Node with Cloudflare WARP (Docker Compose)
+# Tailscale Exit Node with Cloudflare WARP
 
-> **「自宅のIPを晒したくない」「IPv4環境だけどIPv6サイトに繋ぎたい」「高速で安定したモバイルVPNが欲しい」**
->
-> そんなワガママな願いを叶えるための、最強のExit Node構成じゃ。感謝するのじゃな！
+Docker Compose を使い、**Cloudflare WARP** 経由で通信する **Tailscale Exit Node** を構築するプロジェクトです。
 
-このリポジトリは、**Docker Compose** を用いて **Cloudflare WARP** と **Tailscale** を連携させ、高速かつセキュアな Exit Node を構築するためのプロジェクトじゃ。
+Tailscale の Exit Node 機能を利用しつつ、インターネットへの出口を Cloudflare WARP にすることで、ホストの ISP IP アドレスを隠蔽できます。
 
-過去の「全部入り巨大コンテナ」による不安定な構成を捨て、役割を分離したマイクロサービスアーキテクチャを採用しておる。
+## 特徴
 
-## ✨ 特徴
+- **IP 隠蔽**: インターネット通信の出口が Cloudflare WARP になるため、ホストの ISP IP が外部に露出しない
+- **IPv6 対応**: ホストが IPv4 のみでも、WARP トンネル経由で IPv6 インターネットにアクセス可能
+- **トークン期限切れ耐性**: 初回認証後は Tailscale の状態が永続化され、Auth Key が期限切れでもコンテナを再起動可能
+- **ネットワーク自動復旧**: ウォッチドッグが WARP ゲートウェイを監視し、ネットワーク障害からの復旧時にルート再適用と Tailscale 再接続を自動実行
+- **ビルド不要**: 既存の Docker イメージ（`caomingjun/warp` + 公式 `tailscale/tailscale`）を組み合わせるだけで動作
 
-- **🔒 高い匿名性** : インターネットへの出口は Cloudflare WARP になるため、自宅のプロバイダ(ISP)のIPアドレスが隠蔽される。
-- **🚀 高速通信** : カーネルモード（TUN）と適切な NAT/MSS Clamping 設定により、200Mbps超の高速通信を実現（環境による）。
-- **🌐 IPv6 対応** : ホストマシンが IPv4 しか使えなくても、WARP トンネルを経由して IPv6 インターネットへアクセス可能。
-- **🛡️ 安定性** : `iptables` による強制 NAT とルーティング制御により、パケットの迷子（Martian packets）を防ぎ、安定した接続を維持する。
-- **軽量** : 既存の最適化された Docker イメージ（`caomingjun/warp` + 公式 `tailscale`）を組み合わせるため、ビルド不要で軽量じゃ。
+## 前提条件
 
-## ⚙️ 前提条件
-
-この構成を動かすには、以下の準備が必要じゃ。怠るでないぞ。
-
-- **Docker & Docker Compose** : インストール済みであること。
-- **Tailscale Auth Key** : `tskey-auth-...` から始まる認証キー。
-- **【重要】ホストOS側のカーネルモジュール** :
-  IPv6 の NAT を機能させるため、**ホストOS（Ubuntu等）** で以下のモジュールが有効になっている必要がある。
-
-**必ずホスト側で実行せよ！**
+- **Docker** および **Docker Compose**
+- **Tailscale Auth Key**: [Tailscale Admin Console](https://login.tailscale.com/admin/settings/keys) で発行する `tskey-auth-...` 形式のキー（初回のみ必要）
+- **ホスト OS のカーネルモジュール**: IPv6 NAT に必要
 
 ```bash
 sudo modprobe ip6table_nat
 sudo modprobe iptable_nat
 ```
 
-※ 再起動後も有効になるよう、`/etc/modules` に追記することを推奨するぞ。
+F `/etc/modules` に追記してください。
 
-## 🚀 使い方
+```
+ip6table_nat
+iptable_nat
+```
+
+## 使い方
 
 ### 1. リポジトリのクローン
-
-このリポジトリを手元に持ってくるのじゃ。
 
 ```bash
 git clone https://github.com/SyameimaruKoa/tailscale-warp-exit-node.git
 cd tailscale-warp-exit-node
 ```
 
-### 2. 設定ファイル (`.env`) の作成
+### 2. `.env` ファイルの作成
 
-`.env` ファイルを作成し、Tailscale の認証キーを記述せよ。
-
-ホスト名は自動的にホストマシンのものが使われるが、変えたい場合は `TS_HOSTNAME` も書くがよい。
-
-```.env
-TS_AUTHKEY=tskey-auth-xxxxxxxxxxxxxxxxx
-# TS_HOSTNAME=warp-my-server  # 省略するとホストのホスト名になる
+```bash
+cp .env.example .env
 ```
 
-### 3. 起動
+`.env` を編集し、Tailscale の Auth Key を設定します。
 
-Docker Compose でコンテナを立ち上げる。
+```dotenv
+TS_AUTHKEY=tskey-auth-xxxxxxxxxxxxxxxxx
+```
+
+> **Note**: Auth Key は初回認証時のみ使用されます。認証完了後は `./data_tailscale/` に状態が保存されるため、キーが期限切れになってもコンテナの再起動には影響しません。
+
+### 3. 起動
 
 ```bash
 docker compose up -d
 ```
 
-### 4. 接続確認
+### 4. Tailscale 管理画面で Exit Node を承認
 
-Tailscale の管理画面で新しいノード（例: `warp-ubuntu`）が表示され、**「Exit Node」** として認識されているか確認せよ。
+[Tailscale Admin Console](https://login.tailscale.com/admin/machines) で新しいノード（`warp--<ホスト名>` の形式）が表示されるので、**Exit Node** として承認してください。
 
-**【重要】成功の証（Endpoints）**
+### 5. 動作確認
 
-Tailscale管理画面のMachines一覧で、このコンテナの **Endpoints** 欄を見るのじゃ。
+done Exit Node を有効にし、以下を確認します。
 
-以下のように、自宅（ISP）のIPだけでなく、 **Cloudflare WARP由来のIPアドレス** （IPv4なら `104.xx...`、IPv6なら `2a09...` など）が追加されていれば成功じゃ！
+- [test-ipv6.com](https://test-ipv6.com/index.html.ja_JP) で IPv4/IPv6 アドレスが Cloudflare のものになっているか
+- 通常のブラウジングが問題なく動作するか
 
-> **Endpointsの表示例:**
->
-> - `xxx.xxx.xxx.xxx:35767` (自宅/ホストのグローバルIP)
-> - `104.28.xxx.xxx:56256` ( **Cloudflare WARPのIPv4** ) ← これがあればOK
-> - `172.25.0.3:35767` (Docker内部IP)
-> - `[240d:1a:xxx:xxxx:xxxx...]:37819` (自宅/ホストのグローバルIPv6)
-> - `[2a09:bac1:xxx:xxxx...]:16210` ( **Cloudflare WARPのIPv6** ) ← これもあれば完璧じゃ
+## ファイル構成
 
-※ IPアドレスの数値は環境によって異なるが、重要なのは「自分のISPのIP」とは異なる「CloudflareのIP帯域」が表示されていることじゃ。
+| ファイル | 説明 |
+| --- | --- |
+| `docker-compose.yml` | WARP コンテナと Tailscale コンテナを定義。専用の Docker ネットワーク（`172.25.0.0/16` + `fd00:cafe::/64`）で接続 |
+| `entrypoint.sh` | Tailscale コンテナの起動スクリプト。Auth Key のスマート処理、ルーティング書き換え、NAT 設定、MSS Clamping を実行 |
+| `.env.example` | 環境変数のテンプレート |
 
-スマホなどのクライアントでこの Exit Node を有効にし、[test-ipv6.com](https://test-ipv6.com/index.html.ja_JP) などにアクセスして以下を確認するのじゃ。
+## アーキテクチャ
 
-1. **IPv4** : Cloudflare の IP になっているか？
-2. **IPv6** : Cloudflare のアドレスが検出されるか？
-3. **速度** : 動画などがスムーズに見れるか？
+```
 
-## 📂 ファイル構成と役割
+  Docker Network (172.25.0.0/16 / fd00:cafe::/64)    │
+                                                     │
+  ┌──────────────┐       ┌────────────────────┐      │
+  │   Tailscale  │──────▶│   Cloudflare WARP  │──────┼──▶ Internet
+  │  (Exit Node) │  NAT  │    (Gateway)       │      │
+  │  172.25.0.3  │       │    172.25.0.2       │      │
+  └──────────────┘       └────────────────────┘      │
+        ▲                                            │
+ls
+         │ Tailscale VPN
+    クライアント
+```
 
-| **ファイル**         | **説明**                                                                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `docker-compose.yml` | 全体の構成定義。WARPコンテナとTailscaleコンテナを定義し、専用の内部ネットワークで接続しておる。                                    |
-| `entrypoint.sh`      | Tailscale コンテナの起動スクリプト。ルーティングの書き換え、NAT設定、MTU調整（MSS Clamping）を**遅延実行**で行う重要な役割を持つ。 |
+### コンテナの役割
 
-## 🧠 仕組み（アーキテクチャ）
+- **WARP コンテナ** (`caomingjun/warp`): Cloudflare WARP トンネルを維持し、NAT ゲートウェイとして機能。`WARP_ENABLE_NAT=1` により NAT モードで動作
+- **Tailscale コンテナ** (`tailscale/tailscale`): カーネルモードの TUN デバイスで VPN 終端として動作し、Exit Node を提供
 
-なぜこれが「最強」なのか、少しだけ解説してやろう。
+### 通信の流れ
 
-### 1. コンテナの分離 (Sidecar / Bridge)
+1. クライアントが Tailscale VPN 経由で Tailscale コンテナに接続
+2. Tailscale コンテナが `iptables MASQUERADE` で送信元 IP を自身のアドレスに変換（NAT）
+3. デフォルトゲートウェイを WARP コンテナ（`172.25.0.2`）に向けてパケットを転送
+4. WARP コンテナが Cloudflare WARP トンネル経由でインターネットに送出
 
-以前の「1つのコンテナに全部詰め込む」方式はやめじゃ。
+### 主要な技術的対策
 
-- **WARPコンテナ** : SOCKS5プロキシやGatewayとして機能し、Cloudflareへのトンネルを維持する。
-- **Tailscaleコンテナ** : VPNの終端装置として機能する。
+| 対策 | 詳細 |
+| --- | --- |
+| **NAT (Masquerade)** | Tailscale コンテナから WARP コンテナへの通信で送信元 IP を書き換え、戻りパケットが正しくルーティングされるようにする |
+| **MSS Clamping** | VPN in VPN 構成のオーバーヘッドによるパケット詰まりを防ぐため、TCP MSS を 1120 に制限 |
+| **MTU 調整** | `TS_DEBUG_MTU=1280`（IPv6 最小 MTU）に設定し、パケット分断を回避 |
+| **遅延セットアップ** | Tailscale 起動 10 秒後にルーティングを上書き（Tailscale が起動時にルーティングテーブルを書き換えるため） |
+| **Auth Key スマート処理** | 既存の状態ファイルがある場合は `TS_AUTHKEY` を無視し、期限切れキーによる起動失敗を防止 |
+| **ネットワークウォッチドッグ** | WARP ゲートウェイへの疎通を 15 秒間隔で監視。復旧検知時にルート再適用と `tailscaled` への SIGHUP で即座に再接続 |
+| **WARP ヘルスチェック** | Docker ヘルスチェックで WARP の接続状態を監視。Tailscale コンテナは WARP が healthy になるまで起動を待機 |
 
-この2つを Docker の内部ネットワーク（`172.25.0.0/16`）で接続し、明確な役割分担をしておる。
+## トラブルシューティング
 
-### 2. 強制NAT (Masquerade)
+### `IPv6 NAT failed` のログが出る
 
-Tailscale から WARP へパケットを送る際、送信元 IP が「スマホの VPN IP」のままだと、WARP は返信先が分からずパケットを捨ててしまう。
+ OS で `sudo modprobe ip6table_nat` を実行してください。
 
-そこで `iptables -j MASQUERADE` を使い、**「Tailscale コンテナからの通信である」と送信元を偽装（NAT）** することで、正常に返信が戻ってくるようにしておる。
+### 接続できるがインターネットにアクセスできない
 
-### 3. MSS Clamping による最適化
+```bash
+docker logs tailscale
+```
 
-VPN の中に VPN を通す（Tailscale in WARP）構成では、ヘッダのオーバーヘッドによりパケットサイズ（MTU）が制限を超え、通信が詰まることがある。
+`Background: Setup COMPLETE.` が出力されているか確認してください。出ていない場合、WARP コンテナが起動していない可能性があります。
 
-そこで `TCPMSS --set-mss 1120` を適用し、**パケットサイズを強制的に小さく調整** することで、動画のバッファリングや接続切れを根絶したのじゃ。
+### 速度が遅い
 
-### 4. 時間差攻撃（Delayed Setup）
+MSS Clamping の値を調整してみてください。`entrypoint.sh` 内の `--set-mss 1120` を `1100` や `1080` に変更して試してください。
 
-Tailscale は起動時にルーティングテーブルを自分の好きなように書き換えてしまう。
+### ルーター再起動後にノードがオフラインのまま
 
-そのため、`entrypoint.sh` 内で **「Tailscale が起動しきった 10秒後」** を狙って、WARP 向けのルーティング設定を強制的に上書き（Overwrite）しておる。これが安定動作のキモじゃ。
+`docker logs tailscale` で `Watchdog: Network recovered!` のログを確認してください。通常は 15 秒以内にウォッチドッグが検知し、自動復旧します。長時間回復しない場合は WARP コンテナの状態を確認してください。
 
-## ⚠️ トラブルシューティング
+```bash
+docker inspect --format='{{.State.Health.Status}}' warp
+```
 
-- **Q. Tailscale のログに `IPv6 NAT failed` と出る**
-  - **A.** ホストOS側で `sudo modprobe ip6table_nat` を実行していないのが原因じゃ。必ず実行せよ。
-- **Q. 接続はできるがインターネットに出られない**
-  - **A.** `docker logs tailscale` を確認せよ。`Background: Setup COMPLETE.` が表示されているか？ エラーが出ていないか確認するのじゃ。
-- **Q. 速度が遅い**
-  - **A.** おそらく MTU の問題じゃ。`entrypoint.sh` 内の `TCPMSS` の値を調整（例: 1120 -> 1100）してみると改善するかもしれぬ。
+### Auth Key 関連のエラー
 
-## 📜 ライセンス
+- **初回起動時**: 有効な `TS_AUTHKEY` が `.env` に設定されている必要があります
+- **再起動時**: `./data_tailscale/` に状態が保存されていれば Auth Key は不要です。期限切れキーが `.env` に残っていても問題ありません
 
-好きに使うがよい。ただし、自己責任じゃぞ？
+## ライセンス
 
-わっちは知らぬからな！
+MIT

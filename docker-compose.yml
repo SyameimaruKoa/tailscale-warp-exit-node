@@ -24,6 +24,12 @@ services:
       - net.ipv6.conf.all.accept_ra=2
     volumes:
       - ./data_warp:/var/lib/cloudflare-warp
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "https://cloudflare.com/cdn-cgi/trace"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       private_net:
         ipv4_address: 172.25.0.2
@@ -34,6 +40,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: tailscale
     restart: always
+    depends_on:
+      warp:
+        condition: service_healthy
     dns:
       - 1.1.1.1
       - 1.0.0.1
