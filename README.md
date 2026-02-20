@@ -23,7 +23,7 @@ sudo modprobe ip6table_nat
 sudo modprobe iptable_nat
 ```
 
-F `/etc/modules` に追記してください。
+`/etc/modules` に追記してください。
 
 ```
 ip6table_nat
@@ -87,11 +87,10 @@ done Exit Node を有効にし、以下を確認します。
   ┌──────────────┐       ┌────────────────────┐      │
   │   Tailscale  │──────▶│   Cloudflare WARP  │──────┼──▶ Internet
   │  (Exit Node) │  NAT  │    (Gateway)       │      │
-  │  172.25.0.3  │       │    172.25.0.2       │      │
+  │  172.25.0.3  │       │    172.25.0.2      │      │
   └──────────────┘       └────────────────────┘      │
         ▲                                            │
-ls
-         │ Tailscale VPN
+        │ Tailscale VPN
     クライアント
 ```
 
@@ -149,7 +148,3 @@ docker inspect --format='{{.State.Health.Status}}' warp
 
 - **初回起動時**: 有効な `TS_AUTHKEY` が `.env` に設定されている必要があります
 - **再起動時**: `./data_tailscale/` に状態が保存されていれば Auth Key は不要です。期限切れキーが `.env` に残っていても問題ありません
-
-## ライセンス
-
-MIT
