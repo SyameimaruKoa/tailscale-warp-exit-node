@@ -32,8 +32,9 @@ services:
       start_period: 20s
     networks:
       private_net:
-        ipv4_address: 172.25.0.2
-        ipv6_address: fd00:cafe::2
+        ipv4_address: 10.250.199.2
+        ipv6_address: fd42:9876:5432::2
+      macvlan_net: {}
 
 # 2. Tailscaleコンテナ (Exit Node)
   tailscale:
@@ -66,8 +67,8 @@ services:
       - net.ipv6.conf.all.forwarding=1
     networks:
       private_net:
-        ipv4_address: 172.25.0.3
-        ipv6_address: fd00:cafe::3
+        ipv4_address: 10.250.199.3
+        ipv6_address: fd42:9876:5432::3
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
 networks:
@@ -75,5 +76,15 @@ networks:
     enable_ipv6: true
     ipam:
       config:
-        - subnet: 172.25.0.0/16
-        - subnet: fd00:cafe::/64
+        - subnet: 10.250.199.0/24
+        - subnet: fd42:9876:5432::/64
+  macvlan_net:
+    driver: macvlan
+    driver_opts:
+      parent: eth1
+    ipam:
+      config:
+        - subnet: 192.168.55.0/24
+          gateway: 192.168.55.1
+
+
