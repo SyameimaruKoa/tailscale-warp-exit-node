@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   # 1. WARPコンテナ (ゲートウェイ)
   warp:
@@ -81,10 +79,11 @@ networks:
   macvlan_net:
     driver: macvlan
     driver_opts:
-      parent: eth1
+      parent: ${MACVLAN_PARENT:-eth0}
     ipam:
       config:
-        - subnet: 192.168.55.0/24
-          gateway: 192.168.55.1
+        - subnet: ${MACVLAN_SUBNET:-192.168.55.0/24}
+          gateway: ${MACVLAN_GATEWAY:-192.168.55.1}
+
 
 
