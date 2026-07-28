@@ -67,7 +67,9 @@ services:
       private_net:
         ipv4_address: 10.250.199.3
         ipv6_address: fd42:9876:5432::3
+      macvlan_net: {}
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
+
 
 networks:
   private_net:
