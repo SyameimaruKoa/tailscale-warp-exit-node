@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   # 1. WARPコンテナ (ゲートウェイ)
   warp:
@@ -32,8 +30,8 @@ services:
       start_period: 20s
     networks:
       private_net:
-        ipv4_address: 172.25.0.2
-        ipv6_address: fd00:cafe::2
+        ipv4_address: 10.1.0.2
+        ipv6_address: fd6a:204b:1e8d::2
 
 # 2. Tailscaleコンテナ (Exit Node)
   tailscale:
@@ -52,6 +50,8 @@ services:
       # ⬇️【ここを追加】これを入れないと勝手にUserspaceモードになってしまう！
       - TS_USERSPACE=false
       - TS_EXTRA_ARGS=--advertise-exit-node --accept-dns=false
+      - WARP_GW=10.1.0.2
+      - WARP_GW6=fd6a:204b:1e8d::2
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
@@ -66,8 +66,8 @@ services:
       - net.ipv6.conf.all.forwarding=1
     networks:
       private_net:
-        ipv4_address: 172.25.0.3
-        ipv6_address: fd00:cafe::3
+        ipv4_address: 10.1.0.3
+        ipv6_address: fd6a:204b:1e8d::3
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
 networks:
@@ -75,5 +75,5 @@ networks:
     enable_ipv6: true
     ipam:
       config:
-        - subnet: 172.25.0.0/16
-        - subnet: fd00:cafe::/64
+        - subnet: 10.1.0.0/29
+        - subnet: fd6a:204b:1e8d::/64

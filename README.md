@@ -74,7 +74,7 @@ done Exit Node を有効にし、以下を確認します。
 
 | ファイル             | 説明                                                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `docker-compose.yml` | WARP コンテナと Tailscale コンテナを定義。専用の Docker ネットワーク（`172.25.0.0/16` + `fd00:cafe::/64`）で接続 |
+| `docker-compose.yml` | WARP コンテナと Tailscale コンテナを定義。専用の Docker ネットワーク（`10.1.0.0/29` + `fd6a:204b:1e8d::/64`）で接続 |
 | `entrypoint.sh`      | Tailscale コンテナの起動スクリプト。Auth Key のスマート処理、ルーティング書き換え、NAT 設定、MSS Clamping を実行 |
 | `.env.example`       | 環境変数のテンプレート                                                                                           |
 
@@ -82,12 +82,12 @@ done Exit Node を有効にし、以下を確認します。
 
 ```
 
-  Docker Network (172.25.0.0/16 / fd00:cafe::/64)    │
+  Docker Network (10.1.0.0/29 / fd6a:204b:1e8d::/64) │
                                                      │
   ┌──────────────┐       ┌────────────────────┐      │
   │   Tailscale  │──────▶│   Cloudflare WARP  │──────┼──▶ Internet
   │  (Exit Node) │  NAT  │    (Gateway)       │      │
-  │  172.25.0.3  │       │    172.25.0.2      │      │
+  │   10.1.0.3   │       │    10.1.0.2        │      │
   └──────────────┘       └────────────────────┘      │
         ▲                                            │
         │ Tailscale VPN
@@ -103,7 +103,7 @@ done Exit Node を有効にし、以下を確認します。
 
 1. クライアントが Tailscale VPN 経由で Tailscale コンテナに接続
 2. Tailscale コンテナが `iptables MASQUERADE` で送信元 IP を自身のアドレスに変換（NAT）
-3. デフォルトゲートウェイを WARP コンテナ（`172.25.0.2`）に向けてパケットを転送
+3. デフォルトゲートウェイを WARP コンテナ（`10.1.0.2`）に向けてパケットを転送
 4. WARP コンテナが Cloudflare WARP トンネル経由でインターネットに送出
 
 ### 主要な技術的対策
