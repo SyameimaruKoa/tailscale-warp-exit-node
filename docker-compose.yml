@@ -52,16 +52,23 @@ services:
       - TS_EXTRA_ARGS=--advertise-exit-node --accept-dns=false
       - WARP_GW=10.1.0.2
       - WARP_GW6=fd6a:204b:1e8d::2
+      # 経路分離 (Issue #1) の上書き設定。通常は空・既定のままでよい
+      # TS_FWMARK: tailscaledの bypass fwmark。空なら自動検出される
+      - TS_FWMARK=${TS_FWMARK:-}
+      - UNDERLAY_TABLE=${UNDERLAY_TABLE:-100}
     volumes:
       - ./data_tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
       - /etc/hostname:/host_hostname:ro
       - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./verify-routing.sh:/verify-routing.sh:ro
     cap_add:
       - NET_ADMIN
       - NET_RAW
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
+      # fwmark付きパケットの逆経路チェック (rp_filter) に必要 (WARP側と同設定)
+      - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv4.ip_forward=1
       - net.ipv6.conf.all.forwarding=1
     networks:

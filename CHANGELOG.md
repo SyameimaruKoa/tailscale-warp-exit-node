@@ -1,5 +1,16 @@
 # 実装履歴
 
+## 2026-10-27
+
+### Tailscale自身の通信の経路分離 (Issue #1)
+
+- **問題**: `entrypoint.sh` がデフォルトゲートウェイを WARP へ書き換えるため、`tailscaled` 自身の通信（制御プレーン・DERP・direct 接続）まで WARP 経由になり、WARP の接続状態・遅延の影響を受けていた。fwmark だけでは元のゲートウェイへ戻る保証がなかった
+- **対策1**: 起動直後・書き換え前に元の Docker ゲートウェイを退避し、専用テーブル（`100`）に接続済みサブネットごと保持。`tailscaled` の bypass fwmark（`0x80000/0xff0000`、起動時にルールから自動検出）を優先度 `5200` の `ip rule` でこのテーブルへ振り分け、IPv4 / IPv6 双方で `tailscaled` 自身の通信を通常回線へ分離
+- **対策2**: 専用テーブルで解決できない fwmark 付きパケットは優先度 `5201` で `unreachable` とし、WARP へフォールバックさせない。WARP 障害時も `main` のデフォルトは WARP のままにし、Exit Node 転送通信が通常回線へ漏れない従来動作を維持
+- **対策3**: ウォッチドッグが毎周期、経路分離が維持されているか（`ip route get ... mark ...`）も確認し、崩れていれば再適用するよう拡張
+- **対策4**: 検証用に `verify-routing.sh` を追加し、README に経路分離の仕組みと検証手順を記載。`docker-compose.yml` の Tailscale コンテナに `net.ipv4.conf.all.src_valid_mark=1` を追加
+- **変更ファイル**: `entrypoint.sh`, `docker-compose.yml`, `verify-routing.sh`, `README.md`, `.env.example`, `CHANGELOG.md`
+
 ## 2026-02-20
 
 ### ネットワーク障害からの自動復旧
