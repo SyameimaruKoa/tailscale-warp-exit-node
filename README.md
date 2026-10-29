@@ -93,7 +93,7 @@ docker compose exec tailscale tailscale ping <他のノード>
 
 WARP 停止時の確認: `docker compose stop warp` の状態で Exit Node 経由の通信がホスト回線へフォールバックせず失敗すること、`docker compose start warp` 後に復旧することを確認してください。
 
-> **検証状況（2026-10-27）**: 経路分離のロジックは、ネットワーク名前空間上で `tailscaled` の `ip rule`（優先度 5210〜5270）を再現した試験で検証済みです（fwmark 付き IPv4 / IPv6 → 元ゲートウェイ、マークなし → WARP、再適用の冪等性、テーブル破損時の fail-closed、`verify-routing.sh` の全項目 PASS など 16 項目）。実際の Docker コンテナ上での動作確認は、試験環境の制約（レジストリからのイメージ取得不可、ブリッジネットワーク作成不可、cgroup の制約）により未実施です。通常の Docker ホストでの初回起動時に、上記の手順で確認してください。
+> **検証状況（2026-10-29 実機確認済み）**: 実機（`zbox-pi335-w2b`）の実際の Docker コンテナで `verify-routing.sh` を実行し、全項目 PASS を確認しました。`ip rule` に優先度 `5200`（fwmark → テーブル `100`）・`5201`（unreachable ガード）が IPv4 / IPv6 両方で入り、fwmark 付き通信は元のゲートウェイ（`10.1.0.1` / `fd6a:204b:1e8d::1`）、マークなし通信は WARP（`10.1.0.2` / `fd6a:204b:1e8d::2`）へ分離されています。ネットワーク名前空間上で `tailscaled` の `ip rule`（優先度 5210〜5270）を再現した試験でも 16 項目すべて合格しています。未確認なのは、Exit Node クライアントから見た出口 IP が WARP 側であることと、WARP 停止時にクライアント通信が通常回線へ漏れずに失敗することの 2 点です。
 
 ## ファイル構成
 
