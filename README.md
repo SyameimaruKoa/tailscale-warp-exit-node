@@ -93,6 +93,8 @@ docker compose exec tailscale tailscale ping <他のノード>
 
 WARP 停止時の確認: `docker compose stop warp` の状態で Exit Node 経由の通信がホスト回線へフォールバックせず失敗すること、`docker compose start warp` 後に復旧することを確認してください。
 
+> **検証状況（2026-10-27）**: 経路分離のロジックは、ネットワーク名前空間上で `tailscaled` の `ip rule`（優先度 5210〜5270）を再現した試験で検証済みです（fwmark 付き IPv4 / IPv6 → 元ゲートウェイ、マークなし → WARP、再適用の冪等性、テーブル破損時の fail-closed、`verify-routing.sh` の全項目 PASS など 16 項目）。実際の Docker コンテナ上での動作確認は、試験環境の制約（レジストリからのイメージ取得不可、ブリッジネットワーク作成不可、cgroup の制約）により未実施です。通常の Docker ホストでの初回起動時に、上記の手順で確認してください。
+
 ## ファイル構成
 
 | ファイル             | 説明                                                                                                             |
